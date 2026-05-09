@@ -1,0 +1,17 @@
+[package]
+name = "forge_sandbox"
+version = "0.1.0"
+edition = "2021"
+description = "Process-isolated Python code execution engine for Forge"
+
+[lib]
+name = "forge_sandbox"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
+nix = { version = "0.28", features = ["resource"] }
+tempfile = "3.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regex = "1.10"

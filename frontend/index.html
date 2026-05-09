@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FORGE | Autonomous Software Factory</title>
+    <style>
+        :root {
+            --bg: #0a0a0b;
+            --surface: #141416;
+            --accent: #00ff41;
+            --text: #e1e1e6;
+            --border: #28282e;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo { font-weight: bold; color: var(--accent); letter-spacing: 2px; }
+
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            overflow: hidden;
+        }
+
+        #input-panel {
+            padding: 2rem;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        textarea {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 1rem;
+            resize: none;
+            outline: none;
+            border-radius: 4px;
+        }
+
+        button {
+            background: var(--accent);
+            color: black;
+            border: none;
+            padding: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: opacity 0.2s;
+        }
+
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #log-panel {
+            background: #000;
+            padding: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .log-entry { font-size: 0.9rem; line-height: 1.4; }
+        .log-time { color: #666; margin-right: 10px; }
+        .log-phase { color: var(--accent); font-weight: bold; margin-right: 10px; }
+        .status-success { color: var(--accent); }
+        .status-error { color: #ff5555; }
+
+        #download-link {
+            display: none;
+            margin-top: 1rem;
+            text-align: center;
+            color: var(--accent);
+            text-decoration: none;
+            border: 1px solid var(--accent);
+            padding: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">FORGE_v3.0</div>
+        <div id="connection-status">CONNECTED</div>
+    </header>
+    <main>
+        <div id="input-panel">
+            <label>SPECIFICATION</label>
+            <textarea id="prompt" placeholder="Describe the software you want to build..."></textarea>
+            <button id="forge-btn">INITIATE_BUILD</button>
+            <a id="download-link" href="#">DOWNLOAD_ARTIFACT</a>
+        </div>
+        <div id="log-panel">
+            <div class="log-entry">READY FOR INPUT...</div>
+        </div>
+    </main>
+
+    <script>
+        const btn = document.getElementById('forge-btn');
+        const prompt = document.getElementById('prompt');
+        const logs = document.getElementById('log-panel');
+        const dl = document.getElementById('download-link');
+
+        function addLog(phase, msg, type) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry' + (type ? ' ' + type : '');
+            const time = new Date().toLocaleTimeString();
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'log-time';
+            timeSpan.textContent = '[' + time + ']';
+            const phaseSpan = document.createElement('span');
+            phaseSpan.className = 'log-phase';
+            phaseSpan.textContent = phase.toUpperCase();
+            const msgSpan = document.createElement('span');
+            msgSpan.textContent = msg;
+            entry.appendChild(timeSpan);
+            entry.appendChild(phaseSpan);
+            entry.appendChild(msgSpan);
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        btn.onclick = async function() {
+            const text = prompt.value.trim();
+            if (text.length < 10) return alert("Prompt too short.");
+
+            btn.disabled = true;
+            dl.style.display = 'none';
+            addLog("system", "Submitting build request...", "status-success");
+
+            try {
+                const res = await fetch('/api/build', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: text })
+                });
+
+                const data = await res.json();
+                startStreaming(data.request_id);
+            } catch (e) {
+                addLog("error", "Failed to initiate build.", "status-error");
+                btn.disabled = false;
+            }
+        };
+
+        function startStreaming(request_id) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(protocol + '//' + window.location.host + '/ws/build/' + request_id);
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.type === 'progress') {
+                    addLog(data.phase, data.message);
+                } else if (data.type === 'complete') {
+                    if (data.status === 'success') {
+                        addLog("finish", "Build completed successfully!", "status-success");
+                        dl.href = data.data.download_url;
+                        dl.style.display = 'block';
+                    } else {
+                        addLog("failed", "Build failed: " + (data.data.error || 'Unknown error'), "status-error");
+                    }
+                    btn.disabled = false;
+                    ws.close();
+                }
+            };
+        }
+    </script>
+</body>
+</html>
